@@ -8,6 +8,8 @@ import { logger } from './utils/logger';
 
 const PORT = config.port;
 
+let httpServer: http.Server;
+
 const bootstrap = async (): Promise<void> => {
   // 1. Connect to MongoDB
   await connectDB();
@@ -16,7 +18,7 @@ const bootstrap = async (): Promise<void> => {
   initCloudinary();
 
   // 3. Create HTTP server from Express app
-  const httpServer = http.createServer(app);
+  httpServer = http.createServer(app);
 
   // 4. Attach Socket.IO
   initSocketIO(httpServer);
@@ -30,7 +32,22 @@ const bootstrap = async (): Promise<void> => {
 // ─── Graceful shutdown ───────────────────────────────────────────────────────
 const shutdown = (signal: string) => {
   logger.info(`${signal} received — shutting down gracefully`);
-  process.exit(0);
+
+  // Stop accepting new connections and drain existing ones
+  if (httpServer) {
+    httpServer.close(() => {
+      logger.info('HTTP server closed — all connections drained');
+      process.exit(0);
+    });
+
+    // Force exit after 10s if connections won't close
+    setTimeout(() => {
+      logger.warn('Forcing shutdown after 10s timeout');
+      process.exit(1);
+    }, 10_000).unref();
+  } else {
+    process.exit(0);
+  }
 };
 
 process.on('SIGTERM', () => shutdown('SIGTERM'));
@@ -46,3 +63,4 @@ bootstrap().catch((err) => {
   logger.error('Failed to start server:', err);
   process.exit(1);
 });
+

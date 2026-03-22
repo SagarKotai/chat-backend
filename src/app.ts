@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express, { Application, Request, Response } from 'express';
+import mongoose from 'mongoose';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
@@ -58,7 +59,16 @@ app.use('/api', apiLimiter);
 
 // ─── Health check ────────────────────────────────────────────────────────────
 app.get('/health', (_req: Request, res: Response) => {
-  res.json({ status: 'ok', ts: new Date().toISOString() });
+  const mongoState = ['disconnected', 'connected', 'connecting', 'disconnecting'];
+  const state = mongoose.connection.readyState;
+  const healthy = state === 1;
+
+  res.status(healthy ? 200 : 503).json({
+    status: healthy ? 'ok' : 'degraded',
+    ts: new Date().toISOString(),
+    uptime: Math.floor(process.uptime()),
+    mongo: mongoState[state] ?? 'unknown',
+  });
 });
 
 // ─── API routes ──────────────────────────────────────────────────────────────

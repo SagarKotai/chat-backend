@@ -22,6 +22,10 @@ export interface IMessage extends Document {
   fileSize: number;
   mimeType: string;
 
+  // Optional client-side encrypted payload per recipient userId
+  isEncrypted: boolean;
+  encryptedFor: Record<string, string>;
+
   // Delivery receipts per user
   readBy: IMessageReadReceipt[];
   deliveredTo: Types.ObjectId[];
@@ -71,6 +75,8 @@ const messageSchema = new Schema<IMessage>(
     fileName: { type: String, default: '' },
     fileSize: { type: Number, default: 0 },
     mimeType: { type: String, default: '' },
+    isEncrypted: { type: Boolean, default: false },
+    encryptedFor: { type: Schema.Types.Mixed, default: {} },
 
     readBy: [
       {
@@ -113,5 +119,6 @@ const messageSchema = new Schema<IMessage>(
 // Fetch messages for a chat, sorted by creation time (most common query)
 messageSchema.index({ chat: 1, createdAt: -1 });
 messageSchema.index({ sender: 1 });
+messageSchema.index({ content: 'text', fileName: 'text' });
 
 export const Message = model<IMessage>('Message', messageSchema);

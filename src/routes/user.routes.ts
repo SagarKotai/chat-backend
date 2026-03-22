@@ -24,6 +24,15 @@ router.patch(
   userController.updateProfile,
 );
 
+// GET /api/users/me/e2ee-keys
+router.get('/me/e2ee-keys', userController.getE2EEKeys);
+
+// POST /api/users/me/e2ee-keys
+router.post('/me/e2ee-keys', userController.upsertE2EEKey);
+
+// DELETE /api/users/me/e2ee-keys/:deviceId
+router.delete('/me/e2ee-keys/:deviceId', userController.revokeE2EEKey);
+
 // GET  /api/users/:id  — view other user's public profile
 router.get('/:id', userController.getUserProfile);
 

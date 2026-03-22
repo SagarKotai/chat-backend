@@ -7,6 +7,12 @@ export interface IChat extends Document {
   participants: Types.ObjectId[];
   admin: Types.ObjectId; // group admin
   groupAdmins: Types.ObjectId[]; // multiple admins support
+  mutedUsers: {
+    user: Types.ObjectId;
+    mutedBy: Types.ObjectId;
+    mutedUntil: Date | null;
+    reason: string;
+  }[];
   avatar: string; // group avatar
   description: string; // group description
   lastMessage: Types.ObjectId | null;
@@ -45,6 +51,14 @@ const chatSchema = new Schema<IChat>(
         ref: 'User',
       },
     ],
+    mutedUsers: [
+      {
+        user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+        mutedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+        mutedUntil: { type: Date, default: null },
+        reason: { type: String, default: '' },
+      },
+    ],
     avatar: {
       type: String,
       default: '',
@@ -76,5 +90,6 @@ const chatSchema = new Schema<IChat>(
 chatSchema.index({ participants: 1 });
 // Unique 1-to-1 chat lookup (two participants, not a group)
 chatSchema.index({ participants: 1, isGroupChat: 1 });
+chatSchema.index({ name: 'text', description: 'text' });
 
 export const Chat = model<IChat>('Chat', chatSchema);

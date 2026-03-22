@@ -8,6 +8,8 @@ import {
   renameGroupSchema,
   addParticipantsSchema,
   promoteAdminSchema,
+  muteParticipantSchema,
+  unmuteParticipantSchema,
 } from '../middleware/schemas';
 import { upload } from '../utils/upload';
 
@@ -20,6 +22,9 @@ router.post('/', validate(accessChatSchema), chatController.accessOrCreateChat);
 
 // GET  /api/chats           — list all chats for the current user
 router.get('/', chatController.getUserChats);
+
+// GET  /api/chats/search/groups?q=... — search group chats
+router.get('/search/groups', chatController.searchGroupChats);
 
 // GET  /api/chats/:id       — get a specific chat
 router.get('/:id', chatController.getChatById);
@@ -47,5 +52,11 @@ router.delete('/:id/participants/:userId', chatController.removeParticipant);
 
 // PATCH /api/chats/:id/admin — promote member to admin
 router.patch('/:id/admin', validate(promoteAdminSchema), chatController.promoteToAdmin);
+
+// PATCH /api/chats/:id/mute — mute a participant (group admins)
+router.patch('/:id/mute', validate(muteParticipantSchema), chatController.muteParticipant);
+
+// PATCH /api/chats/:id/unmute — remove mute from participant
+router.patch('/:id/unmute', validate(unmuteParticipantSchema), chatController.unmuteParticipant);
 
 export default router;

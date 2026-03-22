@@ -52,3 +52,31 @@ export const deleteNotification = async (req: Request, res: Response, next: Next
     next(err);
   }
 };
+
+export const subscribePush = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { subscription } = req.body as {
+      subscription: { endpoint: string; keys: { p256dh: string; auth: string } };
+    };
+
+    await notificationService.subscribePush(
+      (req as AuthenticatedRequest).user._id,
+      subscription,
+      req.headers['user-agent'],
+    );
+
+    sendSuccess(res, null, 'Push subscription saved');
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const unsubscribePush = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { endpoint } = req.body as { endpoint: string };
+    await notificationService.unsubscribePush((req as AuthenticatedRequest).user._id, endpoint);
+    sendSuccess(res, null, 'Push subscription removed');
+  } catch (err) {
+    next(err);
+  }
+};

@@ -4,8 +4,9 @@ import { config } from '../config/env';
 import { logger } from '../utils/logger';
 import { verifyAccessToken } from '../utils/jwt';
 import { setOnlineStatus } from '../services/user.service';
-import { markMessagesAsRead } from '../services/message.service';
+import { markMessageDelivered, markMessagesAsRead } from '../services/message.service';
 import { Types } from 'mongoose';
+import { Chat } from '../models/chat.model';
 
 // Maps userId → Set of socket IDs (one user may have multiple tabs/devices)
 const onlineUsers = new Map<string, Set<string>>();
@@ -62,6 +63,15 @@ export const initSocketIO = (httpServer: HttpServer): Server => {
     // ── Join personal notification room ──────────────────────────────────────
     void socket.join(`user:${userId}`);
 
+    // ── Join all chat rooms for this user (multi-tab/device sync) ──────────
+    void (async () => {
+      const chats = await Chat.find({ participants: new Types.ObjectId(userId) }).select('_id').lean();
+      for (const chat of chats) {
+        await socket.join(`chat:${chat._id.toString()}`);
+      }
+      socket.emit('sync:required');
+    })();
+
     // ── Join chat room ───────────────────────────────────────────────────────
     socket.on('chat:join', (chatId: string) => {
       void socket.join(`chat:${chatId}`);
@@ -109,24 +119,47 @@ export const initSocketIO = (httpServer: HttpServer): Server => {
     // ── Message delivery status ──────────────────────────────────────────────
     socket.on(
       'message:delivered',
-      (payload: { messageId: string; chatId: string; senderId: string }) => {
-        // Notify the original sender that their message was delivered
-        io.to(`user:${payload.senderId}`).emit('message:delivered', {
-          messageId: payload.messageId,
-          chatId: payload.chatId,
-          deliveredBy: userId,
-        });
+      async (payload: { messageId: string }) => {
+        try {
+          const result = await markMessageDelivered(payload.messageId, new Types.ObjectId(userId));
+          if (!result) return;
+
+          // Notify sender and other connected room participants about status update
+          io.to(`user:${result.senderId}`).emit('message:delivered', {
+            messageId: result.messageId,
+            chatId: result.chatId,
+            deliveredBy: userId,
+          });
+          socket.to(`chat:${result.chatId}`).emit('message:delivered', {
+            messageId: result.messageId,
+            chatId: result.chatId,
+            deliveredBy: userId,
+          });
+        } catch (err) {
+          logger.error('Error marking message delivered via socket', err);
+        }
       },
     );
 
     socket.on(
       'message:read',
-      async (payload: { chatId: string; senderId: string }) => {
+      async (payload: { chatId: string }) => {
         try {
-          await markMessagesAsRead(payload.chatId, new Types.ObjectId(userId));
-          io.to(`user:${payload.senderId}`).emit('message:read', {
+          const result = await markMessagesAsRead(payload.chatId, new Types.ObjectId(userId));
+          if (!result.messageIds.length) return;
+
+          for (const senderId of result.senderIds) {
+            io.to(`user:${senderId}`).emit('message:read', {
+              chatId: payload.chatId,
+              readBy: userId,
+              messageIds: result.messageIds,
+            });
+          }
+
+          socket.to(`chat:${payload.chatId}`).emit('message:read', {
             chatId: payload.chatId,
             readBy: userId,
+            messageIds: result.messageIds,
           });
         } catch (err) {
           logger.error('Error marking messages as read via socket', err);
@@ -149,6 +182,48 @@ export const initSocketIO = (httpServer: HttpServer): Server => {
     // ── Group events ─────────────────────────────────────────────────────────
     socket.on('group:updated', (payload: { chatId: string; chat: unknown }) => {
       socket.to(`chat:${payload.chatId}`).emit('group:updated', payload.chat);
+    });
+
+    // ── WebRTC signaling (direct calls) ─────────────────────────────────────
+    socket.on(
+      'call:offer',
+      (payload: { targetUserId: string; chatId: string; sdp: unknown; video: boolean }) => {
+        io.to(`user:${payload.targetUserId}`).emit('call:offer', {
+          fromUserId: userId,
+          chatId: payload.chatId,
+          sdp: payload.sdp,
+          video: payload.video,
+        });
+      },
+    );
+
+    socket.on(
+      'call:answer',
+      (payload: { targetUserId: string; chatId: string; sdp: unknown }) => {
+        io.to(`user:${payload.targetUserId}`).emit('call:answer', {
+          fromUserId: userId,
+          chatId: payload.chatId,
+          sdp: payload.sdp,
+        });
+      },
+    );
+
+    socket.on(
+      'call:ice-candidate',
+      (payload: { targetUserId: string; chatId: string; candidate: unknown }) => {
+        io.to(`user:${payload.targetUserId}`).emit('call:ice-candidate', {
+          fromUserId: userId,
+          chatId: payload.chatId,
+          candidate: payload.candidate,
+        });
+      },
+    );
+
+    socket.on('call:end', (payload: { targetUserId: string; chatId: string }) => {
+      io.to(`user:${payload.targetUserId}`).emit('call:end', {
+        fromUserId: userId,
+        chatId: payload.chatId,
+      });
     });
 
     // ── Disconnect ───────────────────────────────────────────────────────────

@@ -17,7 +17,7 @@ const requireEnv = (key: string): string => {
 
 export const config = {
   env: (process.env.NODE_ENV as 'development' | 'production' | 'test') || 'development',
-  port: parseInt(process.env.PORT || '5000', 10),
+  port: parseInt(process.env.PORT || '5001', 10),
 
   db: {
     uri: requireEnv('MONGODB_URI'),
@@ -38,6 +38,22 @@ export const config = {
 
   cors: {
     clientUrl: process.env.CLIENT_URL || 'http://localhost:3000',
+  },
+
+  rtc: {
+    turnUrl: process.env.TURN_URL || '',
+    turnUsername: process.env.TURN_USERNAME || '',
+    turnCredential: process.env.TURN_CREDENTIAL || '',
+  },
+
+  webPush: {
+    enabled:
+      Boolean(process.env.WEB_PUSH_VAPID_PUBLIC_KEY) &&
+      Boolean(process.env.WEB_PUSH_VAPID_PRIVATE_KEY) &&
+      Boolean(process.env.WEB_PUSH_SUBJECT),
+    vapidPublicKey: process.env.WEB_PUSH_VAPID_PUBLIC_KEY || '',
+    vapidPrivateKey: process.env.WEB_PUSH_VAPID_PRIVATE_KEY || '',
+    subject: process.env.WEB_PUSH_SUBJECT || '',
   },
 
   rateLimit: {

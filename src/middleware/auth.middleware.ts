@@ -32,6 +32,7 @@ export const protect = async (
       name: user.name,
       email: user.email,
       avatar: user.avatar,
+      publicKey: user.publicKey,
       isOnline: user.isOnline,
     };
 

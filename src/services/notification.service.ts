@@ -1,6 +1,8 @@
 import { Types } from 'mongoose';
 import { Notification } from '../models/notification.model';
 import { NotFoundError } from '../utils/errors';
+import { User } from '../models/user.model';
+import { sendWebPush } from '../utils/webPush';
 
 /** Fetch paginated notifications for the current user */
 export const getNotifications = async (
@@ -60,4 +62,77 @@ export const deleteNotification = async (
     recipient: userId,
   });
   if (result.deletedCount === 0) throw new NotFoundError('Notification not found');
+};
+
+export const subscribePush = async (
+  userId: Types.ObjectId,
+  subscription: {
+    endpoint: string;
+    keys: { p256dh: string; auth: string };
+  },
+  userAgent?: string,
+): Promise<void> => {
+  const user = await User.findById(userId).select('+pushSubscriptions');
+  if (!user) throw new NotFoundError('User not found');
+
+  const existing = user.pushSubscriptions.find((item) => item.endpoint === subscription.endpoint);
+  const now = new Date();
+
+  if (existing) {
+    existing.keys = subscription.keys;
+    existing.lastUsedAt = now;
+    existing.userAgent = userAgent ?? '';
+  } else {
+    user.pushSubscriptions.push({
+      endpoint: subscription.endpoint,
+      keys: subscription.keys,
+      userAgent: userAgent ?? '',
+      createdAt: now,
+      lastUsedAt: now,
+    });
+  }
+
+  await user.save();
+};
+
+export const unsubscribePush = async (userId: Types.ObjectId, endpoint: string): Promise<void> => {
+  const user = await User.findById(userId).select('+pushSubscriptions');
+  if (!user) throw new NotFoundError('User not found');
+
+  user.pushSubscriptions = user.pushSubscriptions.filter((item) => item.endpoint !== endpoint);
+  await user.save();
+};
+
+export const sendPushToUsers = async (
+  userIds: Types.ObjectId[],
+  payload: Record<string, unknown>,
+): Promise<void> => {
+  if (!userIds.length) return;
+
+  const users = await User.find({ _id: { $in: userIds } }).select('+pushSubscriptions');
+
+  for (const user of users) {
+    if (!user.pushSubscriptions.length) continue;
+
+    const aliveSubscriptions: typeof user.pushSubscriptions = [];
+
+    for (const sub of user.pushSubscriptions) {
+      const ok = await sendWebPush(
+        {
+          endpoint: sub.endpoint,
+          keys: {
+            p256dh: sub.keys.p256dh,
+            auth: sub.keys.auth,
+          },
+        },
+        payload,
+      );
+      if (ok) aliveSubscriptions.push(sub);
+    }
+
+    if (aliveSubscriptions.length !== user.pushSubscriptions.length) {
+      user.pushSubscriptions = aliveSubscriptions;
+      await user.save();
+    }
+  }
 };

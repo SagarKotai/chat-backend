@@ -7,7 +7,21 @@ import { uploadToCloudinary } from '../utils/upload';
 export const sendMessage = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const authReq = req as AuthenticatedRequest;
-    const { content, replyTo } = req.body as { content?: string; replyTo?: string };
+    const { content, replyTo, isEncrypted, encryptedFor } = req.body as {
+      content?: string;
+      replyTo?: string;
+      isEncrypted?: boolean;
+      encryptedFor?: string;
+    };
+
+    let encryptedMap: Record<string, string> | undefined;
+    if (encryptedFor) {
+      try {
+        encryptedMap = JSON.parse(encryptedFor) as Record<string, string>;
+      } catch {
+        encryptedMap = undefined;
+      }
+    }
 
     let fileData = {};
     if (req.file) {
@@ -32,10 +46,36 @@ export const sendMessage = async (req: Request, res: Response, next: NextFunctio
       senderId: authReq.user._id,
       content: content ?? '',
       replyTo,
+      isEncrypted,
+      encryptedFor: encryptedMap,
       ...fileData,
     });
 
     sendSuccess(res, message, 'Message sent', 201);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getSmartReplies = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const replies = await messageService.getSmartReplies(
+      req.params.chatId,
+      (req as AuthenticatedRequest).user._id,
+    );
+    sendSuccess(res, replies, 'Smart replies generated');
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getChatSummary = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const summary = await messageService.summarizeChat(
+      req.params.chatId,
+      (req as AuthenticatedRequest).user._id,
+    );
+    sendSuccess(res, summary, 'Chat summary generated');
   } catch (err) {
     next(err);
   }
@@ -50,6 +90,31 @@ export const getMessages = async (req: Request, res: Response, next: NextFunctio
 
     const result = await messageService.getMessages(req.params.chatId, authReq.user._id, page, limit);
     sendSuccess(res, result, 'Messages retrieved');
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const searchMessages = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const query = (req.query.q as string) ?? '';
+    const chatId = req.query.chatId as string | undefined;
+    const limit = Math.min(100, Math.max(1, parseInt((req.query.limit as string) ?? '30', 10)));
+
+    if (!query.trim()) {
+      sendSuccess(res, [], 'No query provided');
+      return;
+    }
+
+    const messages = await messageService.searchMessages({
+      query,
+      chatId,
+      limit,
+      userId: authReq.user._id,
+    });
+
+    sendSuccess(res, messages, 'Message search results');
   } catch (err) {
     next(err);
   }
@@ -83,11 +148,11 @@ export const editMessage = async (req: Request, res: Response, next: NextFunctio
 
 export const markAsRead = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    await messageService.markMessagesAsRead(
+    const result = await messageService.markMessagesAsRead(
       req.params.chatId,
       (req as AuthenticatedRequest).user._id,
     );
-    sendSuccess(res, null, 'Messages marked as read');
+    sendSuccess(res, result, 'Messages marked as read');
   } catch (err) {
     next(err);
   }

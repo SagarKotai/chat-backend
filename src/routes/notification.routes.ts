@@ -12,6 +12,12 @@ router.get('/', notificationController.getNotifications);
 // PATCH  /api/notifications/read/all — mark all as read
 router.patch('/read/all', notificationController.markAllAsRead);
 
+// POST /api/notifications/push/subscribe
+router.post('/push/subscribe', notificationController.subscribePush);
+
+// POST /api/notifications/push/unsubscribe
+router.post('/push/unsubscribe', notificationController.unsubscribePush);
+
 // PATCH  /api/notifications/:id/read — mark one as read
 router.patch('/:id/read', notificationController.markOneAsRead);
 

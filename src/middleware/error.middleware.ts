@@ -27,7 +27,7 @@ export const errorHandler = (
   }
 
   // Mongoose duplicate key
-  if ((err as NodeJS.ErrnoException).code === '11000') {
+  if ((err as unknown as Record<string, unknown>).code === 11000) {
     const match = err.message.match(/index: (\w+)_\d/);
     const field = match ? match[1] : 'field';
     sendError(res, `${field} already exists`, 409);

@@ -30,6 +30,7 @@ interface PublicUser {
   email: string;
   avatar: string;
   bio: string;
+  publicKey: string;
   isOnline: boolean;
   lastSeen: Date;
   createdAt: Date;

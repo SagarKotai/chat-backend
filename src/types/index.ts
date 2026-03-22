@@ -16,6 +16,7 @@ export interface AuthenticatedRequest extends Request {
     name: string;
     email: string;
     avatar?: string;
+    publicKey?: string;
     isOnline: boolean;
   };
 }

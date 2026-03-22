@@ -39,6 +39,16 @@ export const addParticipantsSchema = z.object({
   userIds: z.array(z.string().length(24)).min(1),
 });
 
+export const muteParticipantSchema = z.object({
+  userId: z.string().length(24),
+  minutes: z.number().int().min(1).max(10080).optional(),
+  reason: z.string().max(200).optional(),
+});
+
+export const unmuteParticipantSchema = z.object({
+  userId: z.string().length(24),
+});
+
 export const promoteAdminSchema = z.object({
   userId: z.string().length(24),
 });
@@ -46,6 +56,11 @@ export const promoteAdminSchema = z.object({
 export const sendMessageSchema = z.object({
   content: z.string().max(5000).optional().default(''),
   replyTo: z.string().length(24).optional(),
+  isEncrypted: z
+    .union([z.boolean(), z.string().transform((value) => value === 'true')])
+    .optional()
+    .default(false),
+  encryptedFor: z.string().optional(),
 });
 
 export const editMessageSchema = z.object({
@@ -55,4 +70,5 @@ export const editMessageSchema = z.object({
 export const updateProfileSchema = z.object({
   name: z.string().min(2).max(50).trim().optional(),
   bio: z.string().max(200).optional(),
+  publicKey: z.string().max(2000).optional(),
 });

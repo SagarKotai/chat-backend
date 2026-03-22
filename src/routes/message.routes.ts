@@ -9,6 +9,15 @@ const router = Router();
 
 router.use(protect);
 
+// GET  /api/messages/search/all?q=...&chatId=...&limit=... — search messages
+router.get('/search/all', messageController.searchMessages);
+
+// GET  /api/messages/:chatId/smart-replies — heuristic smart reply suggestions
+router.get('/:chatId/smart-replies', messageController.getSmartReplies);
+
+// GET  /api/messages/:chatId/summary — lightweight chat summarization
+router.get('/:chatId/summary', messageController.getChatSummary);
+
 // POST /api/messages/:chatId        — send a message (text or file)
 router.post(
   '/:chatId',

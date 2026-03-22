@@ -16,7 +16,7 @@ export const accessOrCreateChat = async (
     isGroupChat: false,
     participants: { $all: [currentUserId, targetUserId], $size: 2 },
   })
-    .populate('participants', 'name email avatar isOnline lastSeen')
+    .populate('participants', 'name email avatar isOnline lastSeen publicKey')
     .populate({
       path: 'lastMessage',
       populate: { path: 'sender', select: 'name avatar' },
@@ -29,19 +29,65 @@ export const accessOrCreateChat = async (
     participants: [currentUserId, new Types.ObjectId(targetUserId)],
     createdBy: currentUserId,
   }).then((chat) =>
-    Chat.findById(chat._id).populate('participants', 'name email avatar isOnline lastSeen'),
+    Chat.findById(chat._id).populate('participants', 'name email avatar isOnline lastSeen publicKey'),
   );
 };
 
 /** Fetch all chats for the current user, sorted by most recent activity */
 export const getUserChats = async (userId: Types.ObjectId) => {
   return Chat.find({ participants: userId })
-    .populate('participants', 'name email avatar isOnline lastSeen')
+    .populate('participants', 'name email avatar isOnline lastSeen publicKey')
+    .populate('mutedUsers.user', 'name email avatar')
+    .populate('mutedUsers.mutedBy', 'name email avatar')
     .populate({
       path: 'lastMessage',
       populate: { path: 'sender', select: 'name avatar' },
     })
     .sort({ updatedAt: -1 });
+};
+
+/** Search group chats by name/description for current user */
+export const searchGroupChats = async (
+  userId: Types.ObjectId,
+  query: string,
+  limit = 20,
+) => {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+
+  const safeLimit = Math.max(1, Math.min(100, limit));
+  const baseFilter = {
+    isGroupChat: true,
+    participants: userId,
+  };
+
+  const textResults = await Chat.find({
+    ...baseFilter,
+    $text: { $search: trimmed },
+  })
+    .sort({ score: { $meta: 'textScore' }, updatedAt: -1 })
+    .limit(safeLimit)
+    .select({ score: { $meta: 'textScore' } })
+    .populate('participants', 'name email avatar isOnline lastSeen publicKey')
+    .populate({
+      path: 'lastMessage',
+      populate: { path: 'sender', select: 'name avatar' },
+    });
+
+  if (textResults.length > 0) return textResults;
+
+  const regex = new RegExp(trimmed, 'i');
+  return Chat.find({
+    ...baseFilter,
+    $or: [{ name: regex }, { description: regex }],
+  })
+    .sort({ updatedAt: -1 })
+    .limit(safeLimit)
+    .populate('participants', 'name email avatar isOnline lastSeen publicKey')
+    .populate({
+      path: 'lastMessage',
+      populate: { path: 'sender', select: 'name avatar' },
+    });
 };
 
 // ─── Group chat operations ────────────────────────────────────────────────────
@@ -75,7 +121,7 @@ export const createGroupChat = async (
   });
 
   return Chat.findById(chat._id)
-    .populate('participants', 'name email avatar isOnline lastSeen')
+    .populate('participants', 'name email avatar isOnline lastSeen publicKey')
     .populate('admin', 'name email avatar');
 };
 
@@ -94,7 +140,7 @@ export const renameGroupChat = async (
   await chat.save();
 
   return Chat.findById(chatId)
-    .populate('participants', 'name email avatar isOnline lastSeen')
+    .populate('participants', 'name email avatar isOnline lastSeen publicKey')
     .populate('admin', 'name email avatar');
 };
 
@@ -116,7 +162,7 @@ export const addParticipants = async (
   chat.participants.push(...newIds);
   await chat.save();
 
-  return Chat.findById(chatId).populate('participants', 'name email avatar isOnline lastSeen');
+  return Chat.findById(chatId).populate('participants', 'name email avatar isOnline lastSeen publicKey');
 };
 
 export const removeParticipant = async (
@@ -141,7 +187,7 @@ export const removeParticipant = async (
   chat.groupAdmins = chat.groupAdmins.filter((p) => !p.equals(targetUserId));
   await chat.save();
 
-  return Chat.findById(chatId).populate('participants', 'name email avatar isOnline lastSeen');
+  return Chat.findById(chatId).populate('participants', 'name email avatar isOnline lastSeen publicKey');
 };
 
 export const promoteToAdmin = async (
@@ -164,12 +210,14 @@ export const promoteToAdmin = async (
     await chat.save();
   }
 
-  return Chat.findById(chatId).populate('participants', 'name email avatar isOnline lastSeen');
+  return Chat.findById(chatId).populate('participants', 'name email avatar isOnline lastSeen publicKey');
 };
 
 export const getChatById = async (chatId: string, userId: Types.ObjectId) => {
   const chat = await Chat.findById(chatId)
-    .populate('participants', 'name email avatar isOnline lastSeen')
+    .populate('participants', 'name email avatar isOnline lastSeen publicKey')
+    .populate('mutedUsers.user', 'name email avatar')
+    .populate('mutedUsers.mutedBy', 'name email avatar')
     .populate('admin', 'name email avatar')
     .populate('groupAdmins', 'name email avatar')
     .populate({
@@ -183,4 +231,65 @@ export const getChatById = async (chatId: string, userId: Types.ObjectId) => {
   if (!isMember) throw new ForbiddenError('You are not a member of this chat');
 
   return chat;
+};
+
+export const muteParticipant = async (
+  chatId: string,
+  targetUserId: string,
+  requesterId: Types.ObjectId,
+  minutes?: number,
+  reason?: string,
+) => {
+  const chat = await Chat.findById(chatId);
+  if (!chat || !chat.isGroupChat) throw new NotFoundError('Group chat not found');
+
+  const isAdmin = chat.groupAdmins.some((id) => id.equals(requesterId));
+  if (!isAdmin) throw new ForbiddenError('Only admins can mute users');
+
+  if (!chat.participants.some((id) => id.equals(targetUserId))) {
+    throw new BadRequestError('User is not a participant in this group');
+  }
+
+  const existing = chat.mutedUsers.find((entry) => entry.user.equals(targetUserId));
+  const mutedUntil = minutes ? new Date(Date.now() + minutes * 60 * 1000) : null;
+
+  if (existing) {
+    existing.mutedBy = requesterId;
+    existing.mutedUntil = mutedUntil;
+    existing.reason = reason ?? '';
+  } else {
+    chat.mutedUsers.push({
+      user: new Types.ObjectId(targetUserId),
+      mutedBy: requesterId,
+      mutedUntil,
+      reason: reason ?? '',
+    });
+  }
+
+  await chat.save();
+
+  return Chat.findById(chatId)
+    .populate('participants', 'name email avatar isOnline lastSeen publicKey')
+    .populate('mutedUsers.user', 'name email avatar')
+    .populate('mutedUsers.mutedBy', 'name email avatar');
+};
+
+export const unmuteParticipant = async (
+  chatId: string,
+  targetUserId: string,
+  requesterId: Types.ObjectId,
+) => {
+  const chat = await Chat.findById(chatId);
+  if (!chat || !chat.isGroupChat) throw new NotFoundError('Group chat not found');
+
+  const isAdmin = chat.groupAdmins.some((id) => id.equals(requesterId));
+  if (!isAdmin) throw new ForbiddenError('Only admins can unmute users');
+
+  chat.mutedUsers = chat.mutedUsers.filter((entry) => !entry.user.equals(targetUserId));
+  await chat.save();
+
+  return Chat.findById(chatId)
+    .populate('participants', 'name email avatar isOnline lastSeen publicKey')
+    .populate('mutedUsers.user', 'name email avatar')
+    .populate('mutedUsers.mutedBy', 'name email avatar');
 };

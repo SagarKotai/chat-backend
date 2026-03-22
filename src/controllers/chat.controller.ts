@@ -23,6 +23,26 @@ export const getUserChats = async (req: Request, res: Response, next: NextFuncti
   }
 };
 
+export const searchGroupChats = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const query = (req.query.q as string) ?? '';
+    if (!query.trim()) {
+      sendSuccess(res, [], 'No query provided');
+      return;
+    }
+
+    const limit = Math.min(100, Math.max(1, parseInt((req.query.limit as string) ?? '20', 10)));
+    const chats = await chatService.searchGroupChats(
+      (req as AuthenticatedRequest).user._id,
+      query,
+      limit,
+    );
+    sendSuccess(res, chats, 'Group search results');
+  } catch (err) {
+    next(err);
+  }
+};
+
 export const getChatById = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const chat = await chatService.getChatById(req.params.id, (req as AuthenticatedRequest).user._id);
@@ -112,6 +132,44 @@ export const promoteToAdmin = async (req: Request, res: Response, next: NextFunc
       (req as AuthenticatedRequest).user._id,
     );
     sendSuccess(res, chat, 'User promoted to admin');
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const muteParticipant = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { userId, minutes, reason } = req.body as {
+      userId: string;
+      minutes?: number;
+      reason?: string;
+    };
+
+    const chat = await chatService.muteParticipant(
+      req.params.id,
+      userId,
+      (req as AuthenticatedRequest).user._id,
+      minutes,
+      reason,
+    );
+
+    sendSuccess(res, chat, 'Participant muted');
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const unmuteParticipant = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { userId } = req.body as { userId: string };
+
+    const chat = await chatService.unmuteParticipant(
+      req.params.id,
+      userId,
+      (req as AuthenticatedRequest).user._id,
+    );
+
+    sendSuccess(res, chat, 'Participant unmuted');
   } catch (err) {
     next(err);
   }

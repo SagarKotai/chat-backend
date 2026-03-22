@@ -1,6 +1,25 @@
 import { Schema, model, Document, Types } from 'mongoose';
 import bcrypt from 'bcryptjs';
 
+export interface IE2EEDeviceKey {
+  deviceId: string;
+  publicKey: string;
+  createdAt: Date;
+  lastUsedAt: Date;
+  revokedAt: Date | null;
+}
+
+export interface IWebPushSubscription {
+  endpoint: string;
+  keys: {
+    p256dh: string;
+    auth: string;
+  };
+  userAgent: string;
+  createdAt: Date;
+  lastUsedAt: Date;
+}
+
 export interface IUser extends Document {
   _id: Types.ObjectId;
   name: string;
@@ -8,6 +27,9 @@ export interface IUser extends Document {
   password: string;
   avatar: string;
   bio: string;
+  publicKey: string;
+  e2eeKeys: IE2EEDeviceKey[];
+  pushSubscriptions: IWebPushSubscription[];
   isOnline: boolean;
   lastSeen: Date;
   refreshTokens: string[]; // stored hashed
@@ -50,6 +72,39 @@ const userSchema = new Schema<IUser>(
       maxlength: 200,
       default: '',
     },
+    publicKey: {
+      type: String,
+      default: '',
+    },
+    e2eeKeys: {
+      type: [
+        {
+          deviceId: { type: String, required: true },
+          publicKey: { type: String, required: true },
+          createdAt: { type: Date, default: Date.now },
+          lastUsedAt: { type: Date, default: Date.now },
+          revokedAt: { type: Date, default: null },
+        },
+      ],
+      default: [],
+      select: false,
+    },
+    pushSubscriptions: {
+      type: [
+        {
+          endpoint: { type: String, required: true },
+          keys: {
+            p256dh: { type: String, required: true },
+            auth: { type: String, required: true },
+          },
+          userAgent: { type: String, default: '' },
+          createdAt: { type: Date, default: Date.now },
+          lastUsedAt: { type: Date, default: Date.now },
+        },
+      ],
+      default: [],
+      select: false,
+    },
     isOnline: {
       type: Boolean,
       default: false,
@@ -71,9 +126,14 @@ const userSchema = new Schema<IUser>(
     // Strip password & refreshTokens from JSON serialisation by default
     toJSON: {
       transform(_doc, ret) {
-        const safeRet = ret as { password?: string; refreshTokens?: string[] };
+        const safeRet = ret as {
+          password?: string;
+          refreshTokens?: string[];
+          pushSubscriptions?: IWebPushSubscription[];
+        };
         delete safeRet.password;
         delete safeRet.refreshTokens;
+        delete safeRet.pushSubscriptions;
         return ret;
       },
     },

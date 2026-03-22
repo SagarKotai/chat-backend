@@ -24,7 +24,7 @@ const bootstrap = async (): Promise<void> => {
   initSocketIO(httpServer);
 
   // 5. Start listening
-  httpServer.listen(PORT, () => {
+  httpServer.listen(PORT, '0.0.0.0', () => {
     logger.info(`Server running on port ${PORT} (${config.env})`);
   });
 };

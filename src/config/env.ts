@@ -17,7 +17,7 @@ const requireEnv = (key: string): string => {
 
 export const config = {
   env: (process.env.NODE_ENV as 'development' | 'production' | 'test') || 'development',
-  port: parseInt(process.env.PORT || '5001', 10),
+  port: parseInt(process.env.PORT || '5000', 10),
 
   db: {
     uri: requireEnv('MONGODB_URI'),
